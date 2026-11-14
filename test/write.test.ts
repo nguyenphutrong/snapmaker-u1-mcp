@@ -35,7 +35,9 @@ test("without confirm: true no write tool sends anything", async () => {
     ["start_print", { filename: "a.gcode" }],
     ["set_temperature", { heater: "extruder1", target: 200, confirm: false }],
     ["send_gcode", { script: "G28" }],
+    ["delete_file", { path: "a.gcode" }],
   ];
+  mock.state.files = [{ path: "a.gcode", modified: 1, size: 1 }];
   for (const [name, args] of calls) {
     const r = await call(name, args);
     expect(r.isError).toBeFalsy();
@@ -113,4 +115,15 @@ test("upload_file sends the file as multipart into gcodes, optionally into a sub
   await Bun.write(join(dir, "model.3mf"), "x");
   expect(text(await call("upload_file", { local_path: join(dir, "model.3mf"), confirm: true }))).toContain("Only G-code files");
   expect(mock.state.bodies).toHaveLength(1);
+});
+
+test("delete_file previews, refuses unknown or escaping paths, then deletes", async () => {
+  mock.state.files = [{ path: "jobs/old part.gcode", modified: 1, size: 2e6 }];
+  expect(text(await call("delete_file", { path: "jobs/old part.gcode" }))).toContain("permanently delete gcodes/jobs/old part.gcode (2 MB)");
+  expect(text(await call("delete_file", { path: "missing.gcode", confirm: true }))).toContain("No file gcodes/missing.gcode");
+  expect(text(await call("delete_file", { path: "../config/printer.cfg", confirm: true }))).toContain("Invalid path");
+  expect(mock.state.requests.filter((r) => r.startsWith("DELETE"))).toEqual([]);
+  expect(text(await call("delete_file", { path: "/jobs/old part.gcode", confirm: true }))).toBe("Deleted gcodes/jobs/old part.gcode.");
+  expect(mock.state.requests).toContain("DELETE /server/files/gcodes/jobs/old%20part.gcode");
+  expect(mock.state.files).toEqual([]);
 });

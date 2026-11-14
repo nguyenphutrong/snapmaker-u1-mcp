@@ -24,30 +24,92 @@ export function registerReadTools(server: McpServer, mr: Moonraker) {
     "get_status",
     {
       description:
-        "Printer state, current file, progress %, elapsed and estimated remaining print time, layer, and the current/target temperature of every toolhead, the bed and the chamber.",
+        "Printer state, current file, progress by layer, elapsed and remaining print time, current errors/warnings, " +
+        "the current/target temperature of every toolhead, the bed and the chamber, and each filament slot: loaded, type, colour, RFID spool data and feeder state.",
       annotations: readOnly,
     },
     async () => {
-      // The U1 has four toolheads; read the sensor list instead of assuming extruder..extruder3.
-      const { heaters } = (await mr.get<{ status: { heaters: { available_sensors: string[] } } }>("/printer/objects/query?heaters")).status;
+      // The U1 has four toolheads; read the heater list instead of assuming extruder..extruder3.
+      type Heaters = { available_sensors: string[]; available_heaters: string[] };
+      const { heaters } = (await mr.get<{ status: { heaters: Heaters } }>("/printer/objects/query?heaters")).status;
       const sensors = heaters.available_sensors;
-      const query = ["print_stats", "display_status", ...sensors].map(encodeURIComponent).join("&");
-      const s = (await mr.get<{ status: Record<string, any> }>(`/printer/objects/query?${query}`)).status;
+      const slots = heaters.available_heaters.filter((h) => /^extruder\d*$/.test(h)).map((h) => Number(h.slice(8) || 0));
+      const objects = [
+        "print_stats", "display_status", "exception_manager", "print_task_config", "filament_detect", "filament_feed left", "filament_feed right",
+        ...sensors, ...slots.map((i) => `filament_motion_sensor e${i}_filament`),
+      ];
+      const s = (await mr.get<{ status: Record<string, any> }>(`/printer/objects/query?${objects.map(encodeURIComponent).join("&")}`)).status;
       const job = s.print_stats;
-      const progress: number = s.display_status.progress ?? 0;
+      const active = job.state === "printing" || job.state === "paused";
+
+      // display_status.progress follows the file read position, which runs far ahead of reality on the U1
+      // (96% at layer 294/364). The slicer estimate, then layer count, track the remaining time much better.
+      const meta = active && job.filename
+        ? await mr.get<{ estimated_time?: number }>(`/server/files/metadata?filename=${encodeURIComponent(job.filename)}`).catch(() => undefined)
+        : undefined;
+      const { current_layer: layer, total_layer: layers } = job.info ?? {};
+      const layerFraction = layers ? layer / layers : undefined;
+      const remaining = !active
+        ? null
+        : meta?.estimated_time
+          ? Math.max(0, meta.estimated_time - job.print_duration)
+          : layerFraction
+            ? job.print_duration / layerFraction - job.print_duration
+            : null;
+
+      const exceptions = [...(Object.keys(job.exception ?? {}).length ? [job.exception] : []), ...(s.exception_manager?.exceptions ?? [])];
+      const feed = { ...s["filament_feed left"], ...s["filament_feed right"] };
+      const cfg = s.print_task_config ?? {};
       return json({
         state: job.state,
         message: job.message || undefined,
+        errors: exceptions.length ? exceptions : undefined,
         filename: job.filename || null,
-        progress_percent: Math.round(progress * 1000) / 10,
-        layer: job.info?.total_layer ? `${job.info.current_layer}/${job.info.total_layer}` : undefined,
+        layer: layers ? `${layer}/${layers}` : undefined,
+        progress_percent: Math.round((layerFraction ?? s.display_status.progress ?? 0) * 1000) / 10,
         elapsed: duration(job.print_duration),
-        // ponytail: linear extrapolation from print time; read the slicer's estimated_time from file metadata if this proves too rough.
-        remaining: progress > 0 && progress < 1 ? duration(job.print_duration / progress - job.print_duration) : null,
+        remaining: remaining === null ? null : duration(remaining),
+        remaining_source: remaining === null ? undefined : meta?.estimated_time ? "slicer estimate" : "layers",
         temperatures: Object.fromEntries(
           sensors.map((name) => [name, { current: Math.round(s[name].temperature * 10) / 10, target: s[name].target }]),
         ),
+        filaments: slots.map((i) => {
+          const rfid = s.filament_detect?.info?.[i];
+          return {
+            slot: `T${i + 1}`,
+            extruder: i ? `extruder${i}` : "extruder",
+            detected: s[`filament_motion_sensor e${i}_filament`]?.filament_detected,
+            type: [cfg.filament_type?.[i], cfg.filament_sub_type?.[i]].filter(Boolean).join(" ") || undefined,
+            color: cfg.filament_color_rgba?.[i] ? `#${cfg.filament_color_rgba[i].slice(0, 6)}` : undefined,
+            spool: rfid?.VENDOR
+              ? {
+                  vendor: rfid.VENDOR,
+                  manufacturer: rfid.MANUFACTURER,
+                  type: `${rfid.MAIN_TYPE} ${rfid.SUB_TYPE}`.trim(),
+                  nominal_weight_g: rfid.WEIGHT, // RFID net weight of a full spool, not what is left
+                  nozzle_temp: `${rfid.HOTEND_MIN_TEMP}-${rfid.HOTEND_MAX_TEMP}`,
+                  bed_temp: rfid.BED_TEMP,
+                }
+              : undefined,
+            feeder: feed[`extruder${i}`] ? { state: feed[`extruder${i}`].channel_state, error: feed[`extruder${i}`].channel_error } : undefined,
+          };
+        }),
       });
+    },
+  );
+
+  server.registerTool(
+    "get_console_log",
+    {
+      description:
+        "Recent G-code console output: command responses, errors and warnings, oldest first. Feeder and filament-loading errors (e.g. wheel_speed) only appear here.",
+      inputSchema: { count: z.number().int().min(1).max(1000).default(50) },
+      annotations: readOnly,
+    },
+    async ({ count }) => {
+      const { gcode_store } = await mr.get<{ gcode_store: { message: string; time: number; type: string }[] }>(`/server/gcode_store?count=${count}`);
+      const lines = gcode_store.map((l) => `${new Date(l.time * 1000).toISOString()} ${l.type === "command" ? "> " : ""}${l.message}`);
+      return { content: [{ type: "text" as const, text: lines.join("\n") || "(console is empty)" }] };
     },
   );
 

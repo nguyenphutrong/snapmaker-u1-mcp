@@ -13,24 +13,79 @@ beforeEach(async () => {
 });
 afterEach(() => mock.stop());
 
-test("get_status reports every heater the printer lists, not a hard-coded set", async () => {
-  mock.state.objects = {
-    heaters: { available_sensors: ["heater_bed", "extruder", "extruder3", "temperature_sensor cavity"] },
-    print_stats: { state: "printing", filename: "a.gcode", print_duration: 3600, message: "", info: { total_layer: 100, current_layer: 25 } },
-    display_status: { progress: 0.25 },
-    heater_bed: { temperature: 65.04, target: 65 },
-    extruder: { temperature: 41, target: 0 },
-    extruder3: { temperature: 219.96, target: 220 },
-    "temperature_sensor cavity": { temperature: 39 },
-  };
+const printing = () => ({
+  heaters: {
+    available_sensors: ["heater_bed", "extruder", "extruder3", "temperature_sensor cavity"],
+    available_heaters: ["heater_bed", "extruder", "extruder3"],
+  },
+  // File position says 96% while only 294 of 364 layers are done, as seen on the real printer.
+  print_stats: { state: "printing", filename: "a.gcode", print_duration: 3600, message: "", exception: {}, info: { total_layer: 364, current_layer: 91 } },
+  display_status: { progress: 0.96 },
+  heater_bed: { temperature: 65.04, target: 65 },
+  extruder: { temperature: 41, target: 0 },
+  extruder3: { temperature: 219.96, target: 220 },
+  "temperature_sensor cavity": { temperature: 39 },
+});
+
+test("get_status reports every heater the printer lists, progress by layer and remaining time from the slicer estimate", async () => {
+  mock.state.objects = printing();
+  mock.state.metadata["a.gcode"] = { estimated_time: 3600 + 5400 };
   const s = JSON.parse(text(await call("get_status")));
-  expect(s).toMatchObject({ state: "printing", progress_percent: 25, layer: "25/100", elapsed: "1h 0m", remaining: "3h 0m" });
+  expect(s).toMatchObject({ state: "printing", progress_percent: 25, layer: "91/364", elapsed: "1h 0m", remaining: "1h 30m", remaining_source: "slicer estimate" });
+  expect(s.errors).toBeUndefined();
   expect(s.temperatures).toEqual({
     heater_bed: { current: 65, target: 65 },
     extruder: { current: 41, target: 0 },
     extruder3: { current: 220, target: 220 },
     "temperature_sensor cavity": { current: 39 },
   });
+});
+
+test("get_status falls back to layers for remaining time when the file has no metadata", async () => {
+  mock.state.objects = printing();
+  const s = JSON.parse(text(await call("get_status")));
+  expect(s).toMatchObject({ remaining: "3h 0m", remaining_source: "layers" }); // 1h for 25% of the layers
+});
+
+test("get_status surfaces print and exception_manager errors", async () => {
+  const objects = printing();
+  objects.print_stats = { ...objects.print_stats, state: "paused", exception: { id: 523, message: "e3_filament runout" } as any };
+  mock.state.objects = { ...objects, exception_manager: { exceptions: [{ id: 900, message: "extruder[3] error: wheel_speed" }] } };
+  const s = JSON.parse(text(await call("get_status")));
+  expect(s.errors).toEqual([
+    { id: 523, message: "e3_filament runout" },
+    { id: 900, message: "extruder[3] error: wheel_speed" },
+  ]);
+});
+
+test("get_status reports each filament slot from sensors, task config, RFID and feeder, mapped to the right extruder", async () => {
+  const rfid = (weight: number) => ({ VENDOR: "Snapmaker", MANUFACTURER: "Sunlu", MAIN_TYPE: "PLA", SUB_TYPE: "SnapSpeed", WEIGHT: weight, HOTEND_MIN_TEMP: 190, HOTEND_MAX_TEMP: 230, BED_TEMP: 60 });
+  mock.state.objects = {
+    ...printing(),
+    "filament_motion_sensor e0_filament": { filament_detected: true },
+    "filament_motion_sensor e3_filament": { filament_detected: false },
+    print_task_config: { filament_type: ["PLA", "", "", "PETG"], filament_sub_type: ["SnapSpeed", "", "", ""], filament_color_rgba: ["080A0DFF", "", "", "E2DEDBFF"] },
+    filament_detect: { info: [rfid(500), {}, {}, rfid(1000)] },
+    "filament_feed left": { extruder0: { channel_state: "load_finish", channel_error: "ok" } },
+    "filament_feed right": { extruder3: { channel_state: "unload_finish", channel_error: "wheel_speed" } },
+  };
+  const { filaments } = JSON.parse(text(await call("get_status")));
+  expect(filaments.map((f: any) => f.slot)).toEqual(["T1", "T4"]);
+  expect(filaments[0]).toMatchObject({ extruder: "extruder", detected: true, type: "PLA SnapSpeed", color: "#080A0D", feeder: { state: "load_finish", error: "ok" } });
+  expect(filaments[0].spool.nominal_weight_g).toBe(500);
+  expect(filaments[1]).toMatchObject({ extruder: "extruder3", detected: false, type: "PETG", color: "#E2DEDB", feeder: { error: "wheel_speed" } });
+  expect(filaments[1].spool.nominal_weight_g).toBe(1000);
+});
+
+test("get_console_log returns the last N console lines, oldest first", async () => {
+  mock.state.console = [
+    { message: "old", time: 0, type: "response" },
+    { message: "M117 hi", time: 1, type: "command" },
+    { message: "!! extruder[3] error: wheel_speed", time: 2, type: "response" },
+  ];
+  const lines = text(await call("get_console_log", { count: 2 })).split("\n");
+  expect(lines).toEqual(["1970-01-01T00:00:01.000Z > M117 hi", "1970-01-01T00:00:02.000Z !! extruder[3] error: wheel_speed"]);
+  expect(mock.state.requests).toContain("GET /server/gcode_store?count=2");
 });
 
 test("list_files returns newest first and honours limit", async () => {

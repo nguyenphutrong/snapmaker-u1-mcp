@@ -35,6 +35,11 @@ export class Moonraker {
     return result;
   }
 
+  /** DELETE returning Moonraker's `result`. Never retried. */
+  async delete<T>(path: string): Promise<T> {
+    return ((await (await this.request(path, { method: "DELETE" })).json()) as { result: T }).result;
+  }
+
   listFiles(root: string) {
     return this.get<FileEntry[]>(`/server/files/list?root=${root}`);
   }
@@ -97,7 +102,7 @@ export class Moonraker {
       });
     } catch (e) {
       const timedOut = (e as Error).name === "TimeoutError";
-      const maybeRan = init.method === "POST" ? " The command may still have run; check get_status before retrying." : "";
+      const maybeRan = init.method && init.method !== "GET" ? " The command may still have run; check get_status before retrying." : "";
       throw new MoonrakerError(
         timedOut
           ? `Printer at ${this.host} did not respond within ${timeoutMs / 1000}s (${path}).${maybeRan}`

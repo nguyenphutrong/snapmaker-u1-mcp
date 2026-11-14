@@ -12,6 +12,8 @@ export function startMock() {
     objects: {} as Record<string, unknown>,
     files: [] as { path: string; modified: number; size: number }[],
     jobs: [] as unknown[],
+    metadata: {} as Record<string, unknown>,
+    console: [] as { message: string; time: number; type: string }[],
     bodies: [] as any[],
     refuseStart: false,
     frameTime: 1000,
@@ -33,7 +35,18 @@ export function startMock() {
         return Response.json({ error: { code: state.failStatus, message: "Mock failure" } }, { status: state.failStatus });
       }
       const ok = (result: unknown) => Response.json({ result });
+      if (req.method === "DELETE" && url.pathname.startsWith("/server/files/gcodes/")) {
+        const path = decodeURIComponent(url.pathname.slice("/server/files/gcodes/".length));
+        state.files = state.files.filter((f) => f.path !== path);
+        return ok({ item: { path, root: "gcodes" }, action: "delete_file" });
+      }
       switch (url.pathname) {
+        case "/server/files/metadata": {
+          const meta = state.metadata[url.searchParams.get("filename")!];
+          return meta ? ok(meta) : Response.json({ error: { code: 404, message: "Metadata not available" } }, { status: 404 });
+        }
+        case "/server/gcode_store":
+          return ok({ gcode_store: state.console.slice(-Number(url.searchParams.get("count"))) });
         case "/printer/objects/query":
           return ok({ status: Object.fromEntries([...url.searchParams.keys()].map((k) => [k, state.objects[k]])) });
         case "/server/files/list":

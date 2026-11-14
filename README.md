@@ -94,10 +94,11 @@ The server listens on all interfaces over plain HTTP. Keep it on your LAN or VPN
 
 | Tool | Description |
 |---|---|
-| `get_status` | Print state, current file, progress %, layer, elapsed and estimated remaining time, current/target temperature of every toolhead, the bed and the chamber |
+| `get_status` | Print state, current file, layer and progress, elapsed and remaining time (slicer estimate, else layers), current errors and warnings, current/target temperature of every toolhead, the bed and the chamber, and each filament slot: loaded, type, colour, RFID spool data and feeder state |
 | `list_files` | G-code files on the printer, newest first (`limit`, default 50) |
 | `get_webcam_snapshot` | Takes a fresh photo with the printer's camera and returns it as an image the AI can see |
 | `get_print_history` | Recent print jobs (`limit`, default 10) |
+| `get_console_log` | Recent G-code console output (`count`, default 50). Feeder and filament-loading errors such as `wheel_speed` only appear here |
 
 ### Write (require `confirm: true`)
 
@@ -108,15 +109,20 @@ The server listens on all interfaces over plain HTTP. Keep it on your LAN or VPN
 | `pause_print` / `resume_print` / `cancel_print` | Pause / resume / cancel the current print. Checks the printer state first |
 | `set_temperature` | Sets the target of one heater (`extruder`, `extruder1`…`extruder3`, `heater_bed`); `0` turns it off |
 | `send_gcode` | Sends arbitrary G-code, one command per line |
-| `slice_model` | Only available when `ORCA_CLI_PATH` is set. Slices an STL/3MF with Snapmaker Orca and returns the path of the G-code on this computer |
+| `delete_file` | Deletes a G-code file from the `gcodes` folder. The printer refuses to delete the file it is printing |
+| `slice_model` | Only available when `ORCA_CLI_PATH` is set. Slices an STL/3MF with Snapmaker Orca and returns, per plate, the G-code path on this computer, estimated time and filament grams. Fails if a plate has 0 g of filament |
 
-`slice_model` presets are Orca JSON files. On macOS the U1 system presets live in `~/Library/Application Support/Snapmaker_Orca/system/Snapmaker/`, for example:
+`slice_model` takes Orca preset names or paths to preset JSON files. Names are looked up in `~/Library/Application Support/Snapmaker_Orca/system` first (presets updated by Snapmaker Orca), then in the app bundle. For example:
 
-- `machine/Snapmaker U1 (0.4 nozzle).json`
-- `process/0.20mm Standard @Snapmaker U1 (0.4 nozzle).json`
-- `filament/Generic PLA @U1 base.json`
+- machine `Snapmaker U1 (0.4 nozzle)`
+- process `0.20mm Standard @Snapmaker U1 (0.4 nozzle)`
+- filament `Snapmaker PLA SnapSpeed @U1` or `Generic PLA`
 
-An STL needs machine and process presets; a 3MF can omit them to use the settings stored in the file.
+System presets only store what differs from the preset they `inherits` from, and the Orca CLI does not follow that chain, so `slice_model` merges the chain into one complete preset before slicing. Abstract base presets such as `Generic PLA @U1 base` are refused, with a list of the printable presets built on them.
+
+`overrides` changes process settings, for example `{"wall_loops": 4, "sparse_infill_density": "40%", "enable_support": true, "brim_width": 5}`. The U1 process presets default to `curr_bed_type = Cool Plate` (60 °C bed for PLA); pass `"curr_bed_type": "Textured PEI Plate"` for the textured sheet. Overrides that do not show up in the G-code's config are reported as not applied.
+
+An STL needs machine and process presets; a 3MF can omit them to use the settings stored in the file. For a 3MF, filament presets are written into the project instead of being passed with `--load-filaments`, which would move every object to extruder 1, and 3MF files from newer Bambu Studio/Orca versions are accepted (`--allow-newer-file`).
 
 ## Safety
 
@@ -136,7 +142,9 @@ Network and HTTP errors reach the AI as clear messages, and the server does not 
 - "Were any of the recent prints cancelled?"
 - "Pause the current print."
 - "Heat extruder1 to 220 °C and the bed to 60 °C."
-- "Slice `~/Downloads/benchy.stl` with the 0.4 nozzle, 0.20mm Standard and Generic PLA, upload it and start printing."
+- "Slice `~/Downloads/benchy.stl` with the 0.4 nozzle, 0.20mm Standard, Snapmaker PLA SnapSpeed and 4 walls on the textured PEI plate, upload it and start printing."
+- "Why did the print stop? Check the console log too."
+- "Which filament is loaded in each slot?"
 
 ## U1-specific notes
 

@@ -56,6 +56,24 @@ export function registerWriteTools(server: McpServer, mr: Moonraker, cfg: Config
   );
 
   server.registerTool(
+    "delete_file",
+    {
+      description: "Delete a G-code file from the printer's gcodes folder. The printer refuses to delete the file it is printing.",
+      inputSchema: { path: z.string().min(1).describe("Path inside gcodes, as returned by list_files"), confirm },
+      annotations: write,
+    },
+    async ({ path, confirm }) => {
+      const remote = path.replace(/^\/+/, "");
+      if (remote.split("/").includes("..")) throw new Error(`Invalid path: ${path}`);
+      const file = (await mr.listFiles("gcodes")).find((f) => f.path === remote);
+      if (!file) throw new Error(`No file gcodes/${remote} on the printer.`);
+      if (!confirm) return preview(`permanently delete gcodes/${remote} (${Math.round(file.size / 1e5) / 10} MB) from the printer`);
+      await mr.delete(`/server/files/gcodes/${remote.split("/").map(encodeURIComponent).join("/")}`);
+      return say(`Deleted gcodes/${remote}.`);
+    },
+  );
+
+  server.registerTool(
     "start_print",
     {
       description: "Start printing a file already on the printer (see list_files). Refused while another print is running or paused.",
