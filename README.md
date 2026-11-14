@@ -75,7 +75,7 @@ Dấu `--` là bắt buộc vì `-e` nhận nhiều giá trị. Kiểm tra bằn
 | Tool | Chức năng |
 |---|---|
 | `get_status` | Trạng thái in, file đang in, tiến độ %, layer, thời gian đã in và ước tính còn lại, nhiệt độ hiện tại/mục tiêu của từng đầu in, bàn nhiệt và buồng in |
-| `list_files` | Danh sách file G-code/3MF trên máy, mới nhất trước (`limit`, mặc định 50) |
+| `list_files` | Danh sách file G-code trên máy, mới nhất trước (`limit`, mặc định 50) |
 | `get_webcam_snapshot` | Chụp ảnh mới từ camera của máy, trả về ảnh để AI xem được |
 | `get_print_history` | Lịch sử các lần in gần đây (`limit`, mặc định 10) |
 
@@ -83,7 +83,7 @@ Dấu `--` là bắt buộc vì `-e` nhận nhiều giá trị. Kiểm tra bằn
 
 | Tool | Chức năng |
 |---|---|
-| `upload_file` | Upload file từ máy tính lên thư mục `gcodes` (tùy chọn `remote_dir`). Báo trước nếu sẽ ghi đè |
+| `upload_file` | Upload file G-code (`.gcode`, `.g`, `.gco`, `.ufp`) từ máy tính lên thư mục `gcodes` (tùy chọn `remote_dir`). Báo trước nếu sẽ ghi đè. Máy không in được STL/3MF, cần slice trước |
 | `start_print` | In một file đã có trên máy. Bị từ chối nếu máy đang in hoặc đang tạm dừng |
 | `pause_print` / `resume_print` / `cancel_print` | Tạm dừng / tiếp tục / hủy bản in hiện tại. Kiểm tra trạng thái máy trước |
 | `set_temperature` | Đặt nhiệt độ cho một heater (`extruder`, `extruder1`…`extruder3`, `heater_bed`); `0` để tắt |
@@ -101,7 +101,7 @@ File STL cần preset machine và process; file 3MF có thể bỏ trống để
 ## An toàn
 
 - **Xác nhận:** mọi tool ghi có tham số `confirm`. Nếu `confirm` không phải `true`, tool chỉ mô tả hành động sẽ làm và không gửi gì tới máy.
-- **Giới hạn nhiệt:** `set_temperature` và `send_gcode` từ chối nhiệt độ vượt `MAX_HOTEND_TEMP` / `MAX_BED_TEMP`. Các lệnh được kiểm tra: `M104`, `M109`, `M140`, `M190` (tham số `S` và `R`), `SET_HEATER_TEMPERATURE`, `TEMPERATURE_WAIT`. Tham số nhiệt của các macro riêng của Snapmaker không được kiểm tra; giới hạn `max_temp` của Klipper vẫn áp dụng.
+- **Giới hạn nhiệt:** `set_temperature` và `send_gcode` từ chối nhiệt độ vượt `MAX_HOTEND_TEMP` / `MAX_BED_TEMP`. Các lệnh được kiểm tra: `M104`, `M109`, `M140`, `M190` (tham số `S` và `R`), `SET_HEATER_TEMPERATURE`, `PID_CALIBRATE`, `TEMPERATURE_WAIT`. Tham số nhiệt của các macro riêng của Snapmaker không được kiểm tra; giới hạn `max_temp` của Klipper vẫn áp dụng.
 - **Lệnh nguy hiểm:** `send_gcode` chặn `FIRMWARE_RESTART`, `RESTART`, `SAVE_CONFIG`, `SET_KINEMATIC_POSITION`, `FORCE_MOVE`, `SET_VELOCITY_LIMIT` trừ khi `ALLOW_DANGEROUS_GCODE=true`.
 - **Không in chồng:** `start_print` bị từ chối khi máy đang in hoặc đang tạm dừng.
 - **Không gửi lặp:** chỉ request đọc (GET) được thử lại khi lỗi mạng hoặc HTTP 5xx. Lệnh ghi không bao giờ tự thử lại; nếu bị timeout, thông báo lỗi nhắc kiểm tra `get_status` vì lệnh có thể đã chạy.

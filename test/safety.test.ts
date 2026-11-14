@@ -34,6 +34,9 @@ test("SET_HEATER_TEMPERATURE and TEMPERATURE_WAIT use the heater's own limit", (
   blocked("SET_HEATER_TEMPERATURE HEATER=extruder3 TARGET=301");
   blocked("set_heater_temperature heater=heater_bed target=111");
   allowed("SET_HEATER_TEMPERATURE HEATER=extruder TARGET=111");
+  blocked("PID_CALIBRATE HEATER=extruder2 TARGET=350");
+  blocked("PID_CALIBRATE HEATER=heater_bed TARGET=120");
+  allowed("PID_CALIBRATE HEATER=heater_bed TARGET=60");
   blocked("TEMPERATURE_WAIT SENSOR=extruder1 MINIMUM=305");
   blocked('TEMPERATURE_WAIT SENSOR="heater_bed" MINIMUM=115');
   allowed("TEMPERATURE_WAIT SENSOR=heater_bed MINIMUM=60 MAXIMUM=200");

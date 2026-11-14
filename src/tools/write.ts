@@ -23,7 +23,9 @@ export function registerWriteTools(server: McpServer, mr: Moonraker, cfg: Config
   server.registerTool(
     "upload_file",
     {
-      description: "Upload a G-code/3MF file from this computer to the printer's gcodes folder. Overwrites a file with the same name.",
+      description:
+        "Upload a G-code file from this computer to the printer's gcodes folder. Overwrites a file with the same name. " +
+        "The printer cannot print STL/3MF; slice them first.",
       inputSchema: {
         local_path: z.string().min(1).describe("Absolute path on this computer"),
         remote_dir: z.string().default("").describe("Optional subfolder inside gcodes"),
@@ -34,6 +36,8 @@ export function registerWriteTools(server: McpServer, mr: Moonraker, cfg: Config
     async ({ local_path, remote_dir, confirm }) => {
       const path = resolve(local_path.replace(/^~(?=\/|$)/, homedir()));
       const file = Bun.file(path);
+      // The U1's Moonraker only lists and prints these extensions from gcodes (VALID_GCODE_EXTS).
+      if (!/\.(gcode|g|gco|ufp)$/i.test(path)) throw new Error(`Only G-code files (.gcode, .g, .gco, .ufp) can be uploaded: ${path}`);
       if (!(await file.exists())) throw new Error(`Local file not found: ${path}`);
       const dir = remote_dir.replace(/^\/+|\/+$/g, "");
       const remote = dir ? `${dir}/${basename(path)}` : basename(path);

@@ -54,7 +54,7 @@ export function registerReadTools(server: McpServer, mr: Moonraker) {
   server.registerTool(
     "list_files",
     {
-      description: "List G-code/3MF files stored on the printer, newest first.",
+      description: "List G-code files stored on the printer, newest first.",
       inputSchema: { limit: z.number().int().min(1).max(500).default(50) },
       annotations: readOnly,
     },

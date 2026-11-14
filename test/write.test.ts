@@ -111,6 +111,9 @@ test("upload_file sends the file as multipart into gcodes, optionally into a sub
   expect(text(r)).toBe("Uploaded to gcodes/jobs/part.gcode");
   expect(mock.state.bodies).toEqual([{ name: "part.gcode", text: "G28\nG1 X10", root: "gcodes", path: "jobs" }]);
   expect(text(await call("upload_file", { local_path: join(dir, "missing.gcode"), confirm: true }))).toContain("Local file not found");
+  await Bun.write(join(dir, "model.3mf"), "x");
+  expect(text(await call("upload_file", { local_path: join(dir, "model.3mf"), confirm: true }))).toContain("Only G-code files");
+  expect(mock.state.bodies).toHaveLength(1);
 });
 
 test("slice_model passes presets to the CLI without the key that crashes it, and reports CLI failures", async () => {

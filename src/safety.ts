@@ -43,7 +43,7 @@ export function assertSafeGcode(script: string, limits: Limits) {
       const kind = cmd === "M140" || cmd === "M190" ? "bed" : "hotend";
       check(params.S, kind, cmd);
       check(params.R, kind, cmd);
-    } else if (cmd === "SET_HEATER_TEMPERATURE" || cmd === "TEMPERATURE_WAIT") {
+    } else if (cmd === "SET_HEATER_TEMPERATURE" || cmd === "PID_CALIBRATE" || cmd === "TEMPERATURE_WAIT") {
       const params = Object.fromEntries([...rest.matchAll(/(\w+)\s*=\s*("[^"]*"|\S+)/g)].map((m) => [m[1], m[2]]));
       const target = (params.HEATER ?? params.SENSOR ?? "").replace(/"/g, "");
       const kind = target === "HEATER_BED" ? "bed" : "hotend";
