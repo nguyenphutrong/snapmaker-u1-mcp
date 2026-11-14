@@ -1,0 +1,22 @@
+{
+  "name": "snapmaker-u1-mcp",
+  "type": "module",
+  "private": true,
+  "bin": { "snapmaker-u1-mcp": "src/index.ts" },
+  "scripts": {
+    "start": "bun src/index.ts",
+    "test": "bun test",
+    "typecheck": "bun check",
+    "build": "bun build --compile --minify src/index.ts --outfile dist/snapmaker-u1-mcp"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  }
+}
