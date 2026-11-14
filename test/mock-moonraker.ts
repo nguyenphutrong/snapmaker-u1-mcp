@@ -1,8 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { Moonraker } from "../src/moonraker.ts";
-import { registerReadTools } from "../src/tools/read.ts";
 
 export const JPEG = new Uint8Array([0xff, 0xd8, 1, 2, 3, 4, 0xff, 0xd9]);
 
@@ -14,6 +12,8 @@ export function startMock() {
     objects: {} as Record<string, unknown>,
     files: [] as { path: string; modified: number; size: number }[],
     jobs: [] as unknown[],
+    bodies: [] as any[],
+    refuseStart: false,
     frameTime: 1000,
     truncatedReads: 0,
     failNext: 0,
@@ -46,6 +46,25 @@ export function startMock() {
           return new Response(JPEG);
         case "/server/history/list":
           return ok({ count: state.jobs.length, jobs: state.jobs });
+        case "/printer/print/start":
+          state.bodies.push(await req.json());
+          // Snapmaker's fork refuses with HTTP 200, not an error status.
+          return ok(state.refuseStart ? { state: "error", message: "Printer is not ready to start a new print job." } : "ok");
+        case "/printer/print/pause":
+        case "/printer/print/resume":
+        case "/printer/print/cancel":
+          return ok("ok");
+        case "/printer/gcode/script":
+          state.bodies.push(await req.json());
+          return ok("ok");
+        case "/server/files/upload": {
+          const form = await req.formData();
+          const file = form.get("file") as File;
+          const dir = form.get("path");
+          state.bodies.push({ name: file.name, text: await file.text(), root: form.get("root"), path: dir });
+          // Upload replies are not wrapped in "result".
+          return Response.json({ item: { path: dir ? `${dir}/${file.name}` : file.name, root: "gcodes" }, action: "create_file" }, { status: 201 });
+        }
       }
       return Response.json({ error: { code: 404, message: "Not Found" } }, { status: 404 });
     },
@@ -63,9 +82,9 @@ export function startMock() {
 }
 
 /** Talks to the real MCP server over an in-memory transport, the same protocol Claude uses. */
-export async function connect(mr: Moonraker) {
+export async function connect(register: (server: McpServer) => void) {
   const server = new McpServer({ name: "test", version: "0" });
-  registerReadTools(server, mr);
+  register(server);
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
   const client = new Client({ name: "test", version: "0" });

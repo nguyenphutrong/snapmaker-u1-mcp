@@ -22,6 +22,19 @@ export class Moonraker {
     return this.withRetry(async () => ((await (await this.request(path)).json()) as { result: T }).result);
   }
 
+  /** POST with a JSON or multipart body. Never retried; see get(). */
+  async post<T>(path: string, body: object | FormData = {}, timeoutMs = this.timeoutMs): Promise<T> {
+    const init: RequestInit =
+      body instanceof FormData
+        ? { method: "POST", body }
+        : { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } };
+    const json = (await (await this.request(path, init, timeoutMs)).json()) as { result?: T };
+    const result = (json.result ?? json) as T & { state?: string; message?: string };
+    // Snapmaker's fork reports some refusals as HTTP 200 with {"state": "error"}.
+    if (result?.state === "error") throw new MoonrakerError(`Printer refused ${path}: ${result.message ?? "unknown error"}`, false);
+    return result;
+  }
+
   listFiles(root: string) {
     return this.get<FileEntry[]>(`/server/files/list?root=${root}`);
   }
@@ -74,19 +87,20 @@ export class Moonraker {
     return { jpeg, capturedAt: new Date(modified * 1000) };
   }
 
-  private async request(path: string, init: RequestInit = {}): Promise<Response> {
+  private async request(path: string, init: RequestInit = {}, timeoutMs = this.timeoutMs): Promise<Response> {
     let res: Response;
     try {
       res = await fetch(this.host + path, {
         ...init,
         headers: { ...this.headers, ...(init.headers as Record<string, string>) },
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (e) {
       const timedOut = (e as Error).name === "TimeoutError";
+      const maybeRan = init.method === "POST" ? " The command may still have run; check get_status before retrying." : "";
       throw new MoonrakerError(
         timedOut
-          ? `Printer at ${this.host} did not respond within ${this.timeoutMs / 1000}s (${path})`
+          ? `Printer at ${this.host} did not respond within ${timeoutMs / 1000}s (${path}).${maybeRan}`
           : `Cannot reach printer at ${this.host}: ${(e as Error).message}`,
         true,
       );

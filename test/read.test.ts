@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { Moonraker } from "../src/moonraker.ts";
+import { registerReadTools } from "../src/tools/read.ts";
 import { connect, JPEG, startMock } from "./mock-moonraker.ts";
 
 let mock: ReturnType<typeof startMock>;
@@ -8,7 +9,7 @@ const text = (r: { content: any[] }) => r.content.find((b) => b.type === "text")
 
 beforeEach(async () => {
   mock = startMock();
-  call = await connect(new Moonraker(mock.url, undefined, 500));
+  call = await connect((s) => registerReadTools(s, new Moonraker(mock.url, undefined, 500)));
 });
 afterEach(() => mock.stop());
 

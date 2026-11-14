@@ -4,6 +4,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { loadConfig } from "./config.ts";
 import { Moonraker } from "./moonraker.ts";
 import { registerReadTools } from "./tools/read.ts";
+import { registerSliceTool } from "./tools/slice.ts";
+import { registerWriteTools } from "./tools/write.ts";
 
 // stdout carries the MCP protocol; everything human-readable goes to stderr.
 let config;
@@ -15,6 +17,9 @@ try {
 }
 
 const server = new McpServer({ name: "snapmaker-u1", version: "0.1.0" });
-registerReadTools(server, new Moonraker(config.host, config.apiKey));
+const moonraker = new Moonraker(config.host, config.apiKey);
+registerReadTools(server, moonraker);
+registerWriteTools(server, moonraker, config);
+if (config.orcaCliPath) registerSliceTool(server, config.orcaCliPath);
 await server.connect(new StdioServerTransport());
 console.error(`snapmaker-u1-mcp ready, printer ${config.host}`);
