@@ -1,49 +1,51 @@
 # snapmaker-u1-mcp
 
-MCP server (stdio) để Claude Desktop / Claude Code điều khiển máy in 3D **Snapmaker U1** qua Moonraker API. Viết bằng TypeScript, chạy trên Bun.
+English | [Tiếng Việt](README.vi.md)
 
-Đã kiểm tra với U1 firmware 2.0.0.205 (Moonraker 2.0.0 của Snapmaker) và Snapmaker Orca 01.10.01.50.
+An MCP server (stdio) that lets Claude Desktop and Claude Code control a **Snapmaker U1** 3D printer through the Moonraker API. Written in TypeScript, runs on Bun.
 
-## Cài đặt
+Tested with U1 firmware 2.0.0.205 (Snapmaker's Moonraker 2.0.0) and Snapmaker Orca 01.10.01.50.
 
-Cần [Bun](https://bun.sh) bản mới nhất.
+## Installation
+
+Requires the latest [Bun](https://bun.sh).
 
 ```sh
 bun install
-bun test             # chạy test với mock Moonraker
-bun run build        # đóng gói thành file chạy độc lập: dist/snapmaker-u1-mcp
+bun test             # run the tests against a mock Moonraker
+bun run build        # build a standalone executable: dist/snapmaker-u1-mcp
 ```
 
-Chạy thử trực tiếp từ mã nguồn:
+Run directly from source:
 
 ```sh
 PRINTER_HOST=http://192.168.1.50 bun start
 ```
 
-Server dùng stdout cho giao thức MCP; mọi log đều ghi ra stderr.
+The server uses stdout for the MCP protocol; all logs go to stderr.
 
-## Biến môi trường
+## Environment variables
 
-| Biến | Bắt buộc | Mặc định | Ý nghĩa |
+| Variable | Required | Default | Description |
 |---|---|---|---|
-| `PRINTER_HOST` | có | | Địa chỉ máy in, ví dụ `http://192.168.1.50` (thiếu `http://` sẽ tự thêm) |
-| `MOONRAKER_API_KEY` | không | | Gửi qua header `X-Api-Key` nếu có. U1 mặc định không yêu cầu |
-| `ORCA_CLI_PATH` | không | | Đường dẫn tới CLI của Snapmaker Orca. Có biến này thì mới bật `slice_model`. Trên macOS: `/Applications/Snapmaker Orca.app/Contents/MacOS/Snapmaker_Orca` |
-| `MAX_HOTEND_TEMP` | không | `300` | Nhiệt độ tối đa (°C) cho mọi đầu in |
-| `MAX_BED_TEMP` | không | `110` | Nhiệt độ tối đa (°C) cho bàn nhiệt |
-| `ALLOW_DANGEROUS_GCODE` | không | `false` | Đặt `true` để cho phép các lệnh G-code nguy hiểm (xem phần An toàn) |
+| `PRINTER_HOST` | yes | | Printer address, e.g. `http://192.168.1.50` (`http://` is added if missing) |
+| `MOONRAKER_API_KEY` | no | | Sent as the `X-Api-Key` header when set. The U1 does not require one by default |
+| `ORCA_CLI_PATH` | no | | Path to the Snapmaker Orca CLI. `slice_model` is only enabled when this is set. On macOS: `/Applications/Snapmaker Orca.app/Contents/MacOS/Snapmaker_Orca` |
+| `MAX_HOTEND_TEMP` | no | `300` | Maximum temperature (°C) for every toolhead |
+| `MAX_BED_TEMP` | no | `110` | Maximum temperature (°C) for the heated bed |
+| `ALLOW_DANGEROUS_GCODE` | no | `false` | Set to `true` to allow dangerous G-code commands (see Safety) |
 
-IP của máy in xem trên màn hình U1: **Settings → Network**.
+Find the printer's IP on the U1 touchscreen under **Settings → Network**.
 
-## Cấu hình Claude Desktop
+## Claude Desktop setup
 
-Thêm vào `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`). Dùng **đường dẫn tuyệt đối** tới file đã build, vì Claude Desktop không đọc `PATH` của shell:
+Add this to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`). Use an **absolute path** to the built executable, because Claude Desktop does not read your shell's `PATH`:
 
 ```json
 {
   "mcpServers": {
     "snapmaker-u1": {
-      "command": "/đường/dẫn/tới/snapmaker-u1-mcp/dist/snapmaker-u1-mcp",
+      "command": "/path/to/snapmaker-u1-mcp/dist/snapmaker-u1-mcp",
       "env": {
         "PRINTER_HOST": "http://192.168.1.50",
         "ORCA_CLI_PATH": "/Applications/Snapmaker Orca.app/Contents/MacOS/Snapmaker_Orca"
@@ -53,79 +55,79 @@ Thêm vào `claude_desktop_config.json` (macOS: `~/Library/Application Support/C
 }
 ```
 
-Muốn chạy từ mã nguồn thay vì bản build: `"command": "/đường/dẫn/tới/bun", "args": ["/đường/dẫn/tới/snapmaker-u1-mcp/src/index.ts"]`.
+To run from source instead of the build: `"command": "/path/to/bun", "args": ["/path/to/snapmaker-u1-mcp/src/index.ts"]`.
 
-Khởi động lại Claude Desktop sau khi sửa file.
+Restart Claude Desktop after editing the file.
 
-## Cấu hình Claude Code
+## Claude Code setup
 
 ```sh
 claude mcp add snapmaker-u1 --scope user \
   -e PRINTER_HOST=http://192.168.1.50 \
   -e "ORCA_CLI_PATH=/Applications/Snapmaker Orca.app/Contents/MacOS/Snapmaker_Orca" \
-  -- /đường/dẫn/tới/snapmaker-u1-mcp/dist/snapmaker-u1-mcp
+  -- /path/to/snapmaker-u1-mcp/dist/snapmaker-u1-mcp
 ```
 
-Dấu `--` là bắt buộc vì `-e` nhận nhiều giá trị. Kiểm tra bằng `claude mcp list`.
+The `--` is required because `-e` accepts multiple values. Check the result with `claude mcp list`.
 
-## Danh sách tool
+## Tools
 
-### Đọc (an toàn, không thay đổi gì trên máy)
+### Read (safe, change nothing on the printer)
 
-| Tool | Chức năng |
+| Tool | Description |
 |---|---|
-| `get_status` | Trạng thái in, file đang in, tiến độ %, layer, thời gian đã in và ước tính còn lại, nhiệt độ hiện tại/mục tiêu của từng đầu in, bàn nhiệt và buồng in |
-| `list_files` | Danh sách file G-code trên máy, mới nhất trước (`limit`, mặc định 50) |
-| `get_webcam_snapshot` | Chụp ảnh mới từ camera của máy, trả về ảnh để AI xem được |
-| `get_print_history` | Lịch sử các lần in gần đây (`limit`, mặc định 10) |
+| `get_status` | Print state, current file, progress %, layer, elapsed and estimated remaining time, current/target temperature of every toolhead, the bed and the chamber |
+| `list_files` | G-code files on the printer, newest first (`limit`, default 50) |
+| `get_webcam_snapshot` | Takes a fresh photo with the printer's camera and returns it as an image the AI can see |
+| `get_print_history` | Recent print jobs (`limit`, default 10) |
 
-### Ghi (cần `confirm: true`)
+### Write (require `confirm: true`)
 
-| Tool | Chức năng |
+| Tool | Description |
 |---|---|
-| `upload_file` | Upload file G-code (`.gcode`, `.g`, `.gco`, `.ufp`) từ máy tính lên thư mục `gcodes` (tùy chọn `remote_dir`). Báo trước nếu sẽ ghi đè. Máy không in được STL/3MF, cần slice trước |
-| `start_print` | In một file đã có trên máy. Bị từ chối nếu máy đang in hoặc đang tạm dừng |
-| `pause_print` / `resume_print` / `cancel_print` | Tạm dừng / tiếp tục / hủy bản in hiện tại. Kiểm tra trạng thái máy trước |
-| `set_temperature` | Đặt nhiệt độ cho một heater (`extruder`, `extruder1`…`extruder3`, `heater_bed`); `0` để tắt |
-| `send_gcode` | Gửi G-code tùy ý, mỗi dòng một lệnh |
-| `slice_model` | Chỉ có khi đặt `ORCA_CLI_PATH`. Slice file STL/3MF bằng Snapmaker Orca, trả về đường dẫn G-code trên máy tính |
+| `upload_file` | Uploads a G-code file (`.gcode`, `.g`, `.gco`, `.ufp`) from this computer to the `gcodes` folder (optional `remote_dir`). Warns before overwriting. The printer cannot print STL/3MF; slice them first |
+| `start_print` | Prints a file already on the printer. Refused while the printer is printing or paused |
+| `pause_print` / `resume_print` / `cancel_print` | Pause / resume / cancel the current print. Checks the printer state first |
+| `set_temperature` | Sets the target of one heater (`extruder`, `extruder1`…`extruder3`, `heater_bed`); `0` turns it off |
+| `send_gcode` | Sends arbitrary G-code, one command per line |
+| `slice_model` | Only available when `ORCA_CLI_PATH` is set. Slices an STL/3MF with Snapmaker Orca and returns the path of the G-code on this computer |
 
-Preset cho `slice_model` là các file JSON của Orca. Preset hệ thống của U1 trên macOS nằm trong `~/Library/Application Support/Snapmaker_Orca/system/Snapmaker/`, ví dụ:
+`slice_model` presets are Orca JSON files. On macOS the U1 system presets live in `~/Library/Application Support/Snapmaker_Orca/system/Snapmaker/`, for example:
 
 - `machine/Snapmaker U1 (0.4 nozzle).json`
 - `process/0.20mm Standard @Snapmaker U1 (0.4 nozzle).json`
 - `filament/Generic PLA @U1 base.json`
 
-File STL cần preset machine và process; file 3MF có thể bỏ trống để dùng thiết lập lưu trong file.
+An STL needs machine and process presets; a 3MF can omit them to use the settings stored in the file.
 
-## An toàn
+## Safety
 
-- **Xác nhận:** mọi tool ghi có tham số `confirm`. Nếu `confirm` không phải `true`, tool chỉ mô tả hành động sẽ làm và không gửi gì tới máy.
-- **Giới hạn nhiệt:** `set_temperature` và `send_gcode` từ chối nhiệt độ vượt `MAX_HOTEND_TEMP` / `MAX_BED_TEMP`. Các lệnh được kiểm tra: `M104`, `M109`, `M140`, `M190` (tham số `S` và `R`), `SET_HEATER_TEMPERATURE`, `PID_CALIBRATE`, `TEMPERATURE_WAIT`. Tham số nhiệt của các macro riêng của Snapmaker không được kiểm tra; giới hạn `max_temp` của Klipper vẫn áp dụng.
-- **Lệnh nguy hiểm:** `send_gcode` chặn `FIRMWARE_RESTART`, `RESTART`, `SAVE_CONFIG`, `SET_KINEMATIC_POSITION`, `FORCE_MOVE`, `SET_VELOCITY_LIMIT` trừ khi `ALLOW_DANGEROUS_GCODE=true`.
-- **Không in chồng:** `start_print` bị từ chối khi máy đang in hoặc đang tạm dừng.
-- **Không gửi lặp:** chỉ request đọc (GET) được thử lại khi lỗi mạng hoặc HTTP 5xx. Lệnh ghi không bao giờ tự thử lại; nếu bị timeout, thông báo lỗi nhắc kiểm tra `get_status` vì lệnh có thể đã chạy.
+- **Confirmation:** every write tool has a `confirm` parameter. Unless `confirm` is `true`, the tool only describes what it would do and sends nothing to the printer.
+- **Temperature limits:** `set_temperature` and `send_gcode` refuse temperatures above `MAX_HOTEND_TEMP` / `MAX_BED_TEMP`. Checked commands: `M104`, `M109`, `M140`, `M190` (`S` and `R` parameters), `SET_HEATER_TEMPERATURE`, `PID_CALIBRATE`, `TEMPERATURE_WAIT`. Temperature parameters of Snapmaker's own macros are not checked; Klipper's `max_temp` still applies.
+- **Dangerous commands:** `send_gcode` blocks `FIRMWARE_RESTART`, `RESTART`, `SAVE_CONFIG`, `SET_KINEMATIC_POSITION`, `FORCE_MOVE` and `SET_VELOCITY_LIMIT` unless `ALLOW_DANGEROUS_GCODE=true`.
+- **No overlapping prints:** `start_print` is refused while the printer is printing or paused.
+- **No duplicate commands:** only read (GET) requests are retried on network errors or HTTP 5xx. Write commands are never retried; on a timeout the error says to check `get_status`, because the command may still have run.
 
-Lỗi mạng và HTTP được trả về cho AI dưới dạng thông báo rõ ràng, server không bị crash.
+Network and HTTP errors reach the AI as clear messages, and the server does not crash.
 
-## Ví dụ câu lệnh
+## Example prompts
 
-- "Máy in đang làm gì? Còn bao lâu thì xong?"
-- "Chụp ảnh bàn in xem bản in có bị bong hay lỗi gì không."
-- "Liệt kê 10 file mới nhất trên máy in."
-- "Các lần in gần đây có lần nào bị hủy không?"
-- "Tạm dừng bản in hiện tại."
-- "Gia nhiệt extruder1 lên 220 độ và bàn nhiệt lên 60 độ."
-- "Slice file `~/Downloads/benchy.stl` với nozzle 0.4, layer 0.20mm Standard, nhựa Generic PLA, upload lên máy rồi bắt đầu in."
+- "What is the printer doing? How long until it finishes?"
+- "Take a photo of the bed and check whether the print has lifted or failed."
+- "List the 10 newest files on the printer."
+- "Were any of the recent prints cancelled?"
+- "Pause the current print."
+- "Heat extruder1 to 220 °C and the bed to 60 °C."
+- "Slice `~/Downloads/benchy.stl` with the 0.4 nozzle, 0.20mm Standard and Generic PLA, upload it and start printing."
 
-## Ghi chú riêng về U1
+## U1-specific notes
 
-- **Camera:** firmware gốc không có stream webcam (`/server/webcams/list` rỗng, `/webcam/` trả 502). Ảnh nằm ở file `camera/monitor.jpg` và chỉ được cập nhật khi có client gửi `camera.start_monitor` qua WebSocket. `get_webcam_snapshot` gửi lệnh này, đợi ảnh mới rồi tải về; ảnh đọc phải lúc đang ghi dở sẽ được đọc lại.
-- **Heater:** danh sách đầu in lấy động từ `heaters.available_sensors`, không cố định.
-- **Start print:** dùng `POST /printer/print/start`, không gán filament theo từng đầu in. Lệnh `start_local_print` của Snapmaker (có gán filament) chỉ chạy qua WebSocket và chưa được hỗ trợ.
-- **Lịch sử in:** khi một bản in đang chạy, U1 ghi `print_time` bằng 0. Dùng `get_status` để xem tiến độ.
-- **Slicing:** Snapmaker Orca 01.10.01.50 bị crash (segfault) khi preset process có khóa `wipe_tower_filament`, mà mọi preset process hệ thống của U1 đều có. `slice_model` tự bỏ khóa này trong một bản sao tạm trước khi slice.
+- **Camera:** stock firmware has no webcam stream (`/server/webcams/list` is empty and `/webcam/` returns 502). The image is the file `camera/monitor.jpg`, which only updates while a client sends `camera.start_monitor` over the websocket. `get_webcam_snapshot` sends it, waits for a new frame and downloads it; a half-written image is read again.
+- **Heaters:** the toolhead list comes from `heaters.available_sensors` at runtime, not a fixed list.
+- **Start print:** uses `POST /printer/print/start`, without per-toolhead filament mapping. Snapmaker's `start_local_print` (with filament mapping) only works over the websocket and is not supported yet.
+- **Print history:** while a print is running, the U1 records its `print_time` as 0. Use `get_status` for progress.
+- **Slicing:** Snapmaker Orca 01.10.01.50 crashes (segfault) when a process preset contains `wipe_tower_filament`, which every U1 system process preset does. `slice_model` removes that key in a temporary copy before slicing.
 
 ## License
 
-MIT, xem [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
