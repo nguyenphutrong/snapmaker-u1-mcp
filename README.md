@@ -125,3 +125,7 @@ Lỗi mạng và HTTP được trả về cho AI dưới dạng thông báo rõ 
 - **Start print:** dùng `POST /printer/print/start`, không gán filament theo từng đầu in. Lệnh `start_local_print` của Snapmaker (có gán filament) chỉ chạy qua WebSocket và chưa được hỗ trợ.
 - **Lịch sử in:** khi một bản in đang chạy, U1 ghi `print_time` bằng 0. Dùng `get_status` để xem tiến độ.
 - **Slicing:** Snapmaker Orca 01.10.01.50 bị crash (segfault) khi preset process có khóa `wipe_tower_filament`, mà mọi preset process hệ thống của U1 đều có. `slice_model` tự bỏ khóa này trong một bản sao tạm trước khi slice.
+
+## License
+
+MIT, xem [LICENSE](LICENSE).

@@ -1,5 +1,7 @@
 {
   "name": "snapmaker-u1-mcp",
+  "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
   "private": true,
   "bin": { "snapmaker-u1-mcp": "src/index.ts" },
