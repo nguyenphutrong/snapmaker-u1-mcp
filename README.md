@@ -34,6 +34,8 @@ The server uses stdout for the MCP protocol; all logs go to stderr.
 | `MAX_HOTEND_TEMP` | no | `300` | Maximum temperature (°C) for every toolhead |
 | `MAX_BED_TEMP` | no | `110` | Maximum temperature (°C) for the heated bed |
 | `ALLOW_DANGEROUS_GCODE` | no | `false` | Set to `true` to allow dangerous G-code commands (see Safety) |
+| `MCP_HTTP_PORT` | no | | Serve MCP over HTTP on this port instead of stdio (see HTTP mode) |
+| `MCP_AUTH_TOKEN` | with `MCP_HTTP_PORT` | | Bearer token clients must send, at least 16 characters |
 
 Find the printer's IP on the U1 touchscreen under **Settings → Network**.
 
@@ -69,6 +71,22 @@ claude mcp add snapmaker-u1 --scope user \
 ```
 
 The `--` is required because `-e` accepts multiple values. Check the result with `claude mcp list`.
+
+## HTTP mode
+
+By default the server speaks stdio and the MCP client starts it. To run it as a long-lived service instead, for example on a Raspberry Pi next to the printer, set `MCP_HTTP_PORT`. The server then serves Streamable HTTP at `http://<host>:<port>/mcp` and refuses to start without `MCP_AUTH_TOKEN`:
+
+```sh
+PRINTER_HOST=http://192.168.1.50 MCP_HTTP_PORT=8765 MCP_AUTH_TOKEN=$(openssl rand -hex 32) dist/snapmaker-u1-mcp
+```
+
+Every request must send `Authorization: Bearer <token>`; anything else gets `401`. Add it to Claude Code with:
+
+```sh
+claude mcp add --transport http snapmaker-u1 http://<host>:8765/mcp --header "Authorization: Bearer <token>"
+```
+
+The server listens on all interfaces over plain HTTP. Keep it on your LAN or VPN, or put it behind an HTTPS reverse proxy; the token travels in clear text otherwise. claude.ai remote connectors need OAuth, which this server does not implement.
 
 ## Tools
 

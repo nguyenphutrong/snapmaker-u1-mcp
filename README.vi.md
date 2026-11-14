@@ -34,6 +34,8 @@ Server dùng stdout cho giao thức MCP; mọi log đều ghi ra stderr.
 | `MAX_HOTEND_TEMP` | không | `300` | Nhiệt độ tối đa (°C) cho mọi đầu in |
 | `MAX_BED_TEMP` | không | `110` | Nhiệt độ tối đa (°C) cho bàn nhiệt |
 | `ALLOW_DANGEROUS_GCODE` | không | `false` | Đặt `true` để cho phép các lệnh G-code nguy hiểm (xem phần An toàn) |
+| `MCP_HTTP_PORT` | không | | Chạy MCP qua HTTP ở cổng này thay vì stdio (xem phần Chế độ HTTP) |
+| `MCP_AUTH_TOKEN` | khi có `MCP_HTTP_PORT` | | Bearer token mà client phải gửi, tối thiểu 16 ký tự |
 
 IP của máy in xem trên màn hình U1: **Settings → Network**.
 
@@ -69,6 +71,22 @@ claude mcp add snapmaker-u1 --scope user \
 ```
 
 Dấu `--` là bắt buộc vì `-e` nhận nhiều giá trị. Kiểm tra bằng `claude mcp list`.
+
+## Chế độ HTTP
+
+Mặc định server dùng stdio và được client MCP tự khởi động. Muốn chạy như một dịch vụ luôn bật, ví dụ trên Raspberry Pi đặt cạnh máy in, hãy đặt `MCP_HTTP_PORT`. Khi đó server phục vụ Streamable HTTP tại `http://<host>:<port>/mcp` và sẽ không khởi động nếu thiếu `MCP_AUTH_TOKEN`:
+
+```sh
+PRINTER_HOST=http://192.168.1.50 MCP_HTTP_PORT=8765 MCP_AUTH_TOKEN=$(openssl rand -hex 32) dist/snapmaker-u1-mcp
+```
+
+Mọi request phải gửi header `Authorization: Bearer <token>`, sai hoặc thiếu sẽ nhận `401`. Thêm vào Claude Code:
+
+```sh
+claude mcp add --transport http snapmaker-u1 http://<host>:8765/mcp --header "Authorization: Bearer <token>"
+```
+
+Server lắng nghe trên mọi interface bằng HTTP thường. Chỉ dùng trong LAN/VPN hoặc đặt sau reverse proxy HTTPS, nếu không token sẽ đi qua mạng ở dạng không mã hoá. Remote connector của claude.ai cần OAuth, server này chưa hỗ trợ.
 
 ## Danh sách tool
 
