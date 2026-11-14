@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { chmod, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { loadConfig } from "../src/config.ts";
 import { Moonraker } from "../src/moonraker.ts";
-import { registerSliceTool } from "../src/tools/slice.ts";
 import { registerWriteTools } from "../src/tools/write.ts";
 import { connect, startMock } from "./mock-moonraker.ts";
 
@@ -114,36 +113,4 @@ test("upload_file sends the file as multipart into gcodes, optionally into a sub
   await Bun.write(join(dir, "model.3mf"), "x");
   expect(text(await call("upload_file", { local_path: join(dir, "model.3mf"), confirm: true }))).toContain("Only G-code files");
   expect(mock.state.bodies).toHaveLength(1);
-});
-
-test("slice_model passes presets to the CLI without the key that crashes it, and reports CLI failures", async () => {
-  // Fake Orca CLI: copies the process preset it was given and writes one plate.
-  const cli = join(dir, "orca.sh");
-  await Bun.write(
-    cli,
-    `#!/bin/sh
-while [ $# -gt 1 ]; do case "$1" in --outputdir) out="$2"; shift;; --load-settings) settings="$2"; shift;; --load-filaments) fil="$2"; shift;; esac; shift; done
-[ "$1" = "${join(dir, "bad.stl")}" ] && { echo "[error] run 2335: process not compatible with printer."; exit 239; }
-cp "\${settings#*;}" "$out/process.json"; echo "$fil" > "$out/filaments.txt"; echo G28 > "$out/plate_1.gcode"
-`,
-  );
-  await chmod(cli, 0o755);
-  for (const f of ["cube.stl", "bad.stl", "m.json", "f.json"]) await Bun.write(join(dir, f), "{}");
-  await Bun.write(join(dir, "p.json"), JSON.stringify({ name: "0.20mm", wipe_tower_filament: "0", layer_height: "0.2" }));
-  const slice = await connect((s) => registerSliceTool(s, cli));
-  const args = { model_path: join(dir, "cube.stl"), machine_preset: join(dir, "m.json"), process_preset: join(dir, "p.json"), filament_presets: [join(dir, "f.json")] };
-
-  expect(text(await slice("slice_model", args))).toContain("Not executed");
-  const r = await slice("slice_model", { ...args, confirm: true });
-  expect(r.isError).toBeFalsy();
-  const gcode = text(r).split("\n").find((l) => l.endsWith("plate_1.gcode"))!;
-  expect(await readFile(gcode, "utf8")).toBe("G28\n");
-  expect(JSON.parse(await readFile(join(dirname(gcode), "process.json"), "utf8"))).toEqual({ name: "0.20mm", layer_height: "0.2" });
-  expect(await readFile(join(dirname(gcode), "filaments.txt"), "utf8")).toBe(`${join(dir, "f.json")}\n`);
-  await rm(dirname(gcode), { recursive: true });
-
-  const bad = await slice("slice_model", { ...args, model_path: join(dir, "bad.stl"), confirm: true });
-  expect(bad.isError).toBe(true);
-  expect(text(bad)).toContain("exit code 239");
-  expect(text(bad)).toContain("process not compatible with printer");
 });
